@@ -2,22 +2,33 @@ package io.github.kbmoreno.otwreport.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.github.kbmoreno.otwreport.dto.AirPollutionDTO;
-import io.github.kbmoreno.otwreport.exception.IncompleteApiResponseException;
+import io.github.kbmoreno.otwreport.exception.InvalidApiKeyException;
+import io.github.kbmoreno.otwreport.validator.OwmResponseValidator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 @Service
 public class AirPollutionService {
-    @Value("${weather.key}")
+    private static final Logger log = LoggerFactory.getLogger(AirPollutionService.class);
+    @Value("${owm.key}")
     private String apiKey;
 
     public final RestTemplate restTemplate;
+    public final OwmResponseValidator validator;
 
-    public AirPollutionService(RestTemplateBuilder restTemplateBuilder) {
+    public AirPollutionService(
+            RestTemplateBuilder restTemplateBuilder,
+            OwmResponseValidator validator
+    ) {
         this.restTemplate = restTemplateBuilder.build();
+        this.validator = validator;
     }
 
     public AirPollutionDTO getAirPollutionData(double lat, double lon) {
@@ -28,36 +39,36 @@ public class AirPollutionService {
                 apiKey
         );
 
-        ResponseEntity<JsonNode> response = restTemplate.getForEntity(url, JsonNode.class);
-        JsonNode json = response.getBody();
+        try {
+            ResponseEntity<JsonNode> httpResponse = restTemplate.getForEntity(url, JsonNode.class);
+            JsonNode jsonBody = httpResponse.getBody();
+            validator.validateAirPollutionResponse(jsonBody);
+            return mapToDto(jsonBody);
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
+                log.error("Invalid API Key used in Open Weather Map Air Pollution API");
+                throw new InvalidApiKeyException("An upstream error occurred. Please try again later.");
+            }
 
-        if (json == null || !json.has("list")) {
-            throw new IncompleteApiResponseException("No data point for Air Pollution found.");
+            throw e;
         }
+    }
 
-        AirPollutionDTO airPollutionDTO = new AirPollutionDTO(
-                new AirPollutionDTO.Main(json.at("/list/0/main/aqi").asInt()),
+    public AirPollutionDTO mapToDto(JsonNode jsonBody) {
+        return new AirPollutionDTO(
+                new AirPollutionDTO.Main(
+                        jsonBody.at("/list/0/main/aqi").asInt()
+                ),
                 new AirPollutionDTO.Components(
-                        json.at("/list/0/components/co").asDouble(),
-                        json.at("/list/0/components/no").asDouble(),
-                        json.at("/list/0/components/no2").asDouble(),
-                        json.at("/list/0/components/o3").asDouble(),
-                        json.at("/list/0/components/so2").asDouble(),
-                        json.at("/list/0/components/pm2_5").asDouble(),
-                        json.at("/list/0/components/pm10").asDouble(),
-                        json.at("/list/0/components/nh3").asDouble()
+                        jsonBody.at("/list/0/components/co").asDouble(),
+                        jsonBody.at("/list/0/components/no").asDouble(),
+                        jsonBody.at("/list/0/components/no2").asDouble(),
+                        jsonBody.at("/list/0/components/o3").asDouble(),
+                        jsonBody.at("/list/0/components/so2").asDouble(),
+                        jsonBody.at("/list/0/components/pm2_5").asDouble(),
+                        jsonBody.at("/list/0/components/pm10").asDouble(),
+                        jsonBody.at("/list/0/components/nh3").asDouble()
                 )
         );
-//        dto.setAqi(json.at("/list/0/main/aqi").asInt());
-//        dto.setCo(json.at("/list/0/components/co").asDouble());
-//        dto.setNo(json.at("/list/0/components/no").asDouble());
-//        dto.setNo2(json.at("/list/0/components/no2").asDouble());
-//        dto.setO3(json.at("/list/0/components/o3").asDouble());
-//        dto.setSo2(json.at("/list/0/components/so2").asDouble());
-//        dto.setPm2_5(json.at("/list/0/components/pm2_5").asDouble());
-//        dto.setPm10(json.at("/list/0/components/pm10").asDouble());
-//        dto.setNh3(json.at("/list/0/components/nh3").asDouble());
-
-        return airPollutionDTO;
     }
 }
