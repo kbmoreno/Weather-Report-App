@@ -2,10 +2,10 @@ package io.github.kbmoreno.otwreport.exception;
 
 import java.time.LocalDateTime;
 
-public record ApiError(
-        String status,
-        String message,
+public record ErrorResponseDTO(
         LocalDateTime timestamp,
-        String path,
-        int httpStatus
+        int status,
+        String error,
+        String message,
+        String path
 ) { }

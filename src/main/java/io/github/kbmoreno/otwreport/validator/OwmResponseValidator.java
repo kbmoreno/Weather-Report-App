@@ -1,42 +1,51 @@
 package io.github.kbmoreno.otwreport.validator;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.github.kbmoreno.otwreport.exception.ExternalApiDataNotFoundException;
-import io.github.kbmoreno.otwreport.exception.InvalidApiKeyException;
+import io.github.kbmoreno.otwreport.exception.MissingJsonNodeException;
+import io.github.kbmoreno.otwreport.exception.NullResponseException;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class OwmResponseValidator {
-
     private static final Logger log = LoggerFactory.getLogger(OwmResponseValidator.class);
 
-    public void validateAirPollutionResponse(JsonNode jsonBody) {
+    @Autowired
+    private HttpServletRequest request;
+
+    public void validateAirPollutionData(JsonNode jsonBody) {
         if (jsonBody == null) {
-            throw new ExternalApiDataNotFoundException("No response body received from the Air Pollution API.");
+            logNullResponse();
         }
 
-        if (jsonBody.at("/cod").asInt() == 401) {
-            log.error("Invalid API Key used in Open Weather Map Air Pollution API");
-            throw new InvalidApiKeyException("An upstream error occurred. Please try again later.");
+        JsonNode listNode = jsonBody.path("list");
+        if (listNode.isMissingNode() || !listNode.isArray()) {
+            logMissingNode(jsonBody, "list");
+        }
+
+        JsonNode mainNode = listNode.get(0).path("main");
+        if (mainNode.isMissingNode() || mainNode.isNull()) {
+            logMissingNode(jsonBody, "main");
+        }
+
+        JsonNode componentNode = listNode.get(0).path("components");
+        if (componentNode.isMissingNode() || componentNode.isNull()) {
+            logMissingNode(jsonBody, "components");
         }
     }
 
-    public void validateCurrentWeatherResponse(JsonNode jsonBody) {
-        if (jsonBody == null) {
-            throw new ExternalApiDataNotFoundException("No response body received from the Current Weather API.");
-        }
-
-        // will be updated with more logic once Current Weather Service has been created
+    public void logNullResponse() {
+        log.error("No data found in the HTTP response of Open Weather Map's Air Pollution API");
+        log.debug("Client Request: {}", request.getRequestURL());
+        throw new NullResponseException("Currently unable to retrieve air pollution data. Please try again later.");
     }
 
-    public void validateForecastWeatherResponse(JsonNode jsonBody) {
-        if (jsonBody == null) {
-            throw new ExternalApiDataNotFoundException("No response body received from the Forecast Weather API.");
-        }
-
-        // will be updated with more logic once Forecast Weather Service has been created
+    public void logMissingNode(JsonNode jsonBody, String nodeName) {
+        log.error("Missing Node: '{}', in HTTP response body", nodeName);
+        log.debug("Response: {}", jsonBody);
+        throw new MissingJsonNodeException("Currently unable to retrieve air pollution data. Please try again later.");
     }
-
 }
